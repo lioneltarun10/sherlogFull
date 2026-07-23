@@ -29,7 +29,7 @@ function Sidebar({
         <div className="p-4 border-b border-slate-800">
           <div className="flex items-center gap-3">
             <img src={zeissLogo} alt="ZEISS Logo" className="h-8 w-auto" />
-            <span className="text-lg font-semibold bg-gradient-to-r from-slate-100 to-slate-300 bg-clip-text text-transparent">SherLogs</span>
+            <span className="text-lg font-semibold bg-gradient-to-r from-slate-100 to-slate-300 bg-clip-text text-transparent">SherLog</span>
           </div>
         </div>
 

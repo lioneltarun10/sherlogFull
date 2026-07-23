@@ -20,7 +20,7 @@ function ChatArea({ messages, isLoading }) {
             <div className="absolute inset-0 bg-sky-500/20 blur-3xl rounded-full"></div>
             <img src={zeissLogo} alt="ZEISS Logo" className="relative h-16 w-auto opacity-90" />
           </div>
-          <h2 className="text-2xl font-semibold text-slate-100 mb-3">Welcome to SherLogs</h2>
+          <h2 className="text-2xl font-semibold text-slate-100 mb-3">Welcome to SherLog</h2>
           <p className="text-center max-w-md text-slate-400 leading-relaxed">
             Your AI-powered log analysis assistant. Enter a trace ID and ask questions to get insights about your logs.
           </p>

@@ -154,7 +154,7 @@ function App() {
         {/* Header */}
         <header className="flex items-center justify-center gap-3 h-14 border-b border-slate-800 bg-slate-900/80 backdrop-blur-sm flex-shrink-0">
           <img src={zeissLogo} alt="ZEISS Logo" className="h-6 w-auto" />
-          <h1 className="text-lg font-semibold bg-gradient-to-r from-slate-100 to-slate-300 bg-clip-text text-transparent">SherLogs</h1>
+          <h1 className="text-lg font-semibold bg-gradient-to-r from-slate-100 to-slate-300 bg-clip-text text-transparent">SherLog</h1>
         </header>
 
         {/* Messages */}
