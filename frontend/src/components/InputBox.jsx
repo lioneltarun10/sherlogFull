@@ -6,8 +6,12 @@ function InputBox({ onSendMessage, disabled }) {
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    if (traceId.trim() && input.trim() && !disabled) {
-      onSendMessage({ traceId: traceId.trim(), userPrompt: input.trim() })
+    if (input.trim() && !disabled) {
+      // traceId is optional - send it if present, otherwise null/empty
+      onSendMessage({ 
+        traceId: traceId.trim() || null, 
+        userPrompt: input.trim() 
+      })
       setInput('')
       // Keep traceId for convenience - user might want to ask multiple questions about same trace
     }
@@ -20,7 +24,8 @@ function InputBox({ onSendMessage, disabled }) {
     }
   }
 
-  const canSubmit = traceId.trim() && input.trim() && !disabled
+  // traceId is now optional - only userPrompt is required
+  const canSubmit = input.trim() && !disabled
 
   return (
     <div className="border-t border-slate-700/50 bg-gradient-to-t from-slate-900 to-slate-900/95 px-4 py-4">
@@ -38,7 +43,7 @@ function InputBox({ onSendMessage, disabled }) {
             type="text"
             value={traceId}
             onChange={(e) => setTraceId(e.target.value)}
-            placeholder="Enter trace ID to search logs..."
+            placeholder="Optional: Enter trace ID to search logs..."
             disabled={disabled}
             className="flex-1 bg-transparent border-none outline-none px-2 py-1 text-slate-100 placeholder-slate-500 text-sm"
           />

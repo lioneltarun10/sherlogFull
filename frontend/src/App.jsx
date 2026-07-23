@@ -3,7 +3,7 @@ import Sidebar from './components/Sidebar'
 import ChatArea from './components/ChatArea'
 import InputBox from './components/InputBox'
 import zeissLogo from './assets/Zeiss-Logo-Login.svg'
-import { analyzeLogs } from './services/chatService'
+import { analyzeLogs, sendMessage } from './services/chatService'
 
 function App() {
   const [conversations, setConversations] = useState([
@@ -17,19 +17,26 @@ function App() {
   const activeConversation = conversations.find(c => c.id === activeConversationId)
 
   const handleSendMessage = async ({ traceId, userPrompt }) => {
-    if (!traceId.trim() || !userPrompt.trim() || isLoading) return
+    if (!userPrompt.trim() || isLoading) return
 
-    // Add user message showing both traceId and question
+    // Determine if this is a log analysis request or a general chat
+    const hasTraceId = traceId && traceId.trim() !== ''
+
+    // Add user message - show traceId only if provided
     const userMessage = {
       id: Date.now(),
       role: 'user',
-      content: `**Trace ID:** ${traceId}\n\n${userPrompt}`
+      content: hasTraceId 
+        ? `**Trace ID:** ${traceId}\n\n${userPrompt}`
+        : userPrompt
     }
 
     setConversations(prev => prev.map(conv => {
       if (conv.id === activeConversationId) {
         const newTitle = conv.messages.length === 0 
-          ? `Trace: ${traceId.slice(0, 20)}...`
+          ? hasTraceId 
+            ? `Trace: ${traceId.slice(0, 20)}...`
+            : userPrompt.slice(0, 30) + (userPrompt.length > 30 ? '...' : '')
           : conv.title
         return {
           ...conv,
@@ -44,20 +51,27 @@ function App() {
     setIsLoading(true)
     
     try {
-      const response = await analyzeLogs(traceId, userPrompt)
-      
-      // Build response content showing logs and AI analysis
       let responseContent = ''
       
-      if (response.logs && response.logs.length > 0) {
-        responseContent += `**Found ${response.logs.length} log entries:**\n\n`
-        responseContent += '```\n' + response.logs.slice(0, 10).join('\n') + '\n```\n\n'
-        if (response.logs.length > 10) {
-          responseContent += `*(Showing first 10 of ${response.logs.length} logs)*\n\n`
+      if (hasTraceId) {
+        // Call /api/analyze when traceId is provided
+        const response = await analyzeLogs(traceId, userPrompt)
+        
+        // Build response content showing logs and AI analysis
+        if (response.logs && response.logs.length > 0) {
+          responseContent += `**Found ${response.logs.length} log entries:**\n\n`
+          responseContent += '```\n' + response.logs.slice(0, 10).join('\n') + '\n```\n\n'
+          if (response.logs.length > 10) {
+            responseContent += `*(Showing first 10 of ${response.logs.length} logs)*\n\n`
+          }
         }
+        
+        responseContent += '**Analysis:**\n\n' + response.aiResponse
+      } else {
+        // Call /api/chat when no traceId is provided
+        const response = await sendMessage(userPrompt)
+        responseContent = response.reply
       }
-      
-      responseContent += '**Analysis:**\n\n' + response.aiResponse
 
       const assistantMessage = {
         id: Date.now() + 1,

@@ -14,7 +14,7 @@ import java.time.format.DateTimeParseException;
  */
 public class LogAnalysisRequest {
 
-    @NotBlank(message = "traceId is required")
+    // Optional at DTO level - validated in ChatController.validateAnalysisRequest()
     private String traceId;
 
     // Optional - defaults to "mass.planning-import-backend.service" in LogAnalysisService
