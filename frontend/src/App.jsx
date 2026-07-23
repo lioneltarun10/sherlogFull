@@ -3,7 +3,7 @@ import Sidebar from './components/Sidebar'
 import ChatArea from './components/ChatArea'
 import InputBox from './components/InputBox'
 import zeissLogo from './assets/Zeiss-Logo-Login.svg'
-import { sendMessage } from './services/chatService'
+import { analyzeLogs } from './services/chatService'
 
 function App() {
   const [conversations, setConversations] = useState([
@@ -16,20 +16,20 @@ function App() {
 
   const activeConversation = conversations.find(c => c.id === activeConversationId)
 
-  const handleSendMessage = async (content) => {
-    if (!content.trim() || isLoading) return
+  const handleSendMessage = async ({ traceId, userPrompt }) => {
+    if (!traceId.trim() || !userPrompt.trim() || isLoading) return
 
-    // Add user message
+    // Add user message showing both traceId and question
     const userMessage = {
       id: Date.now(),
       role: 'user',
-      content: content.trim()
+      content: `**Trace ID:** ${traceId}\n\n${userPrompt}`
     }
 
     setConversations(prev => prev.map(conv => {
       if (conv.id === activeConversationId) {
         const newTitle = conv.messages.length === 0 
-          ? content.trim().slice(0, 30) + (content.length > 30 ? '...' : '')
+          ? `Trace: ${traceId.slice(0, 20)}...`
           : conv.title
         return {
           ...conv,
@@ -44,11 +44,25 @@ function App() {
     setIsLoading(true)
     
     try {
-      const response = await sendMessage(content.trim())
+      const response = await analyzeLogs(traceId, userPrompt)
+      
+      // Build response content showing logs and AI analysis
+      let responseContent = ''
+      
+      if (response.logs && response.logs.length > 0) {
+        responseContent += `**Found ${response.logs.length} log entries:**\n\n`
+        responseContent += '```\n' + response.logs.slice(0, 10).join('\n') + '\n```\n\n'
+        if (response.logs.length > 10) {
+          responseContent += `*(Showing first 10 of ${response.logs.length} logs)*\n\n`
+        }
+      }
+      
+      responseContent += '**Analysis:**\n\n' + response.aiResponse
+
       const assistantMessage = {
         id: Date.now() + 1,
         role: 'assistant',
-        content: response.reply
+        content: responseContent
       }
 
       setConversations(prev => prev.map(conv => {
@@ -113,13 +127,13 @@ function App() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-900 text-gray-100">
+    <div className="flex h-screen bg-slate-950 text-slate-100 overflow-hidden">
       {/* Mobile sidebar toggle */}
       <button
         onClick={() => setSidebarOpen(!sidebarOpen)}
-        className="md:hidden fixed top-4 left-4 z-50 p-2 bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors"
+        className="md:hidden fixed top-3 left-3 z-50 p-2.5 bg-slate-800 border border-slate-700 rounded-xl hover:bg-slate-700 transition-colors shadow-lg"
       >
-        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
         </svg>
       </button>
@@ -136,11 +150,11 @@ function App() {
       />
 
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Header */}
-        <header className="flex items-center justify-center gap-3 h-14 border-b border-gray-700 bg-gray-800/50">
+        <header className="flex items-center justify-center gap-3 h-14 border-b border-slate-800 bg-slate-900/80 backdrop-blur-sm flex-shrink-0">
           <img src={zeissLogo} alt="ZEISS Logo" className="h-6 w-auto" />
-          <h1 className="text-lg font-semibold">SherLogs</h1>
+          <h1 className="text-lg font-semibold bg-gradient-to-r from-slate-100 to-slate-300 bg-clip-text text-transparent">SherLogs</h1>
         </header>
 
         {/* Messages */}

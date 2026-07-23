@@ -143,4 +143,53 @@ private static final String USER_PROMPT = """
             return new ChatResponse("Sorry, I encountered an error while processing your request. Please try again later.");
         }
     }
+
+    /**
+     * Analyze logs with a custom user prompt.
+     * Uses the provided logs as context and the userPrompt as the user's question.
+     *
+     * @param logs the logs to analyze (as context)
+     * @param userPrompt the user's question about the logs
+     * @return the AI analysis response
+     * @throws RuntimeException if OpenAI call fails
+     */
+    public String analyzeLogs(String logs, String userPrompt) {
+        LOG.infof("Analyzing logs with user prompt: %s", userPrompt);
+        LOG.infof("Logs context length: %d characters", logs != null ? logs.length() : 0);
+
+        try {
+            // Build the user message combining logs and user prompt
+            String userMessage = buildUserMessageWithLogs(logs, userPrompt);
+
+            List<ChatRequestMessage> chatMessages = Arrays.asList(
+                new ChatRequestSystemMessage(SYSTEM_PROMPT),
+                new ChatRequestUserMessage(userMessage)
+            );
+
+            ChatCompletionsOptions options = new ChatCompletionsOptions(chatMessages);
+            options.setMaxCompletionTokens(16384);
+
+            ChatCompletions chatCompletions = openAIClient.getChatCompletions(deploymentName, options);
+
+            String response = chatCompletions.getChoices().get(0).getMessage().getContent();
+            LOG.infof("Received analysis response from Azure OpenAI (length: %d)", response.length());
+
+            return response;
+        } catch (Exception e) {
+            LOG.errorf(e, "Error calling Azure OpenAI for log analysis: %s", e.getMessage());
+            throw new RuntimeException("Failed to analyze logs with OpenAI: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Builds the user message by combining logs and user prompt.
+     */
+    private String buildUserMessageWithLogs(String logs, String userPrompt) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("User Question: ").append(userPrompt).append("\n\n");
+        sb.append("=== Service Logs ===\n");
+        sb.append(logs != null ? logs : "No logs available");
+        sb.append("\n=== End of Logs ===\n");
+        return sb.toString();
+    }
 }

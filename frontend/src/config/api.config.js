@@ -8,7 +8,8 @@ const config = {
   // API endpoints
   endpoints: {
     chat: '/api/chat',
-    health: '/api/health'
+    health: '/api/health',
+    analyze: '/api/analyze'
   }
 };
 

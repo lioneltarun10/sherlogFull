@@ -81,6 +81,18 @@ public class GrafanaService {
     }
 
     public GrafanaQueryResponse executeLokiQuery(String logQl) {
+        return executeLokiQuery(logQl, null, null);
+    }
+
+    /**
+     * Executes a Loki query with custom time range.
+     *
+     * @param logQl the LogQL query expression
+     * @param fromMillis start time in epoch milliseconds (null for default)
+     * @param toMillis end time in epoch milliseconds (null for default)
+     * @return the query response from Grafana
+     */
+    public GrafanaQueryResponse executeLokiQuery(String logQl, Long fromMillis, Long toMillis) {
         Datasource datasource = resourceClient
                 .getDatasourceByType(DatasourceTypes.LOKI)
                 .orElseThrow(() -> new RuntimeException("Loki datasource not found"));
@@ -89,10 +101,24 @@ public class GrafanaService {
                 datasource.getUid(),
                 datasource.getId(),
                 logQl,
-                null,
-                null);
+                fromMillis,
+                toMillis);
 
-        return queryClient.execute(request, datasource.getType());
+        try {
+            LOG.infof("Loki query request: from=%s, to=%s, query=%s", 
+                request.getFrom(), request.getTo(), logQl);
+        } catch (Exception e) {
+            LOG.warn("Could not log request details", e);
+        }
+
+        GrafanaQueryResponse response = queryClient.execute(request, datasource.getType());
+        
+        // Log if response contains empty frames
+        if (response != null && response.getResults() != null) {
+            LOG.debugf("Loki query response received");
+        }
+        
+        return response;
     }
 
     // TODO: Implement when TempoQueryBuilder is ready
