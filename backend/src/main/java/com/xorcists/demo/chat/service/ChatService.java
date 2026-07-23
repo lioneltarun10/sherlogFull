@@ -8,10 +8,14 @@ import com.azure.ai.openai.models.ChatRequestMessage;
 import com.azure.ai.openai.models.ChatRequestSystemMessage;
 import com.azure.ai.openai.models.ChatRequestUserMessage;
 import com.azure.core.credential.AzureKeyCredential;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xorcists.demo.chat.dto.ChatRequest;
 import com.xorcists.demo.chat.dto.ChatResponse;
+import com.xorcists.demo.grafana.service.GrafanaService;
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
@@ -23,6 +27,30 @@ public class ChatService {
 
     private static final Logger LOG = Logger.getLogger(ChatService.class);
 
+    // --- Prompt for Step 1: API routing decision ---
+    private static final String API_SELECTOR_PROMPT = """
+        You are a routing assistant for a Grafana observability system.
+        Given a user query, decide which Grafana API to call to gather the data needed to answer it.
+        
+        Available APIs:
+        1. LOGS      - Fetches application/service logs from Loki. Use when the user asks about errors, log messages, events, or "what happened". Requires a LogQL query string.
+        2. METRICS   - Fetches metrics from Prometheus. Use when the user asks about CPU, memory, request rates, latency, or numerical measurements. Requires a PromQL query string.
+        3. FOLDERS   - Lists Grafana dashboard folders. Use only when the user asks about dashboards or folder structure. No query string needed.
+        4. DATASOURCES - Lists configured Grafana datasources. Use only when the user asks about data sources. No query string needed.
+        
+        Respond ONLY with a valid JSON object in this exact format, no extra text:
+        {
+          "api": "<LOGS|METRICS|FOLDERS|DATASOURCES>",
+          "query": "<the LogQL or PromQL query string, or null if not applicable>"
+        }
+        
+        Examples:
+        - "Why are users getting 500 errors on the checkout service?" -> {"api": "LOGS", "query": "{service=\\"checkout\\"} |= \\"500\\""}
+        - "What is the CPU usage of the auth service?" -> {"api": "METRICS", "query": "rate(process_cpu_seconds_total{service=\\"auth\\"}[5m])"}
+        - "Show me available dashboards" -> {"api": "FOLDERS", "query": null}
+        """;
+
+    // --- Prompt for Step 3: Final analysis ---
     private static final String SYSTEM_PROMPT = """
         You are a log analysis assistant for service-oriented systems.
         Purpose: Given (1) a user query about services (issues, errors, unexpected behavior, "why did this happen?" questions, etc.) and (2) corresponding service logs (including service names, service logs, error logs, traces, metrics, etc.), analyze the logs in the context of the query and return a clear, in-depth explanation of what is happening and what to do next.
@@ -48,55 +76,13 @@ public class ChatService {
         Preserve technical meaning exactly: do not alter log text, error codes, service names, or identifiers when referencing them.
         Response content:
         Brief summary of the main finding (what is happening / what the user likely needs).
-        Detailed analysis:
-        Where the issue appears (service, component, endpoint, job, etc.).
-        What specific errors or events indicate the problem.
-        How these events relate to the user's described symptom.
-        Any dependencies or upstream/downstream services involved.
-        Recommended actions:
-        Immediate mitigation (e.g., restart service X, roll back deployment Y, adjust config Z).
-        Longer-term fixes (e.g., code changes, validation, retry strategy, timeouts, resource limits).
-        Additional checks (e.g., inspect database connectivity, verify credentials, monitor specific metrics).
-        If the query is not an incident but a "what/why" question, provide a conceptual explanation based on the logs (e.g., why a service behaved a certain way, why a request was throttled, why a job was skipped).
+        Detailed analysis: where the issue appears, what specific errors or events indicate the problem, how these events relate to the user's described symptom, any dependencies or upstream/downstream services involved.
+        Recommended actions: immediate mitigation, longer-term fixes, additional checks.
         Strict output rules:
         Answer the user's query directly; do not restate the prompt or meta-instructions.
-        Do not output raw logs verbatim unless needed to support a point; quote only relevant snippets.
-        No generic disclaimers unless uncertainty is specifically present; then be explicit and concise.
-        No bullet lists unless they help structure causes and actions clearly.
-        No code fences unless the user explicitly requests code or configuration examples.
-        Do not ask the user follow-up questions unless the logs are clearly insufficient and this blocks any meaningful conclusion.
-        Failure prevention:
-        If the logs contradict the user's expectation, explain the discrepancy clearly.
-        If the logs do not show any error, focus on behavior, performance, or configuration aspects that could explain the query.
-        If multiple time ranges or services are present, make clear which ones you are focusing on and why.
-        If the query is ambiguous, state assumptions explicitly before giving conclusions, but still provide the best possible analysis from the available data.
-        Style target:
-        Dense, precise, technically accurate, and diagnostic.
-        Neutral and professional tone.
+        No generic disclaimers unless uncertainty is specifically present.
         Optimized for actionable insight: the user should understand what happened and what to do next.
         """;
-
-private static final String USER_PROMPT = """
-        2026-07-20 14:58:09.453 info INFO - [SUCCESS] TaskDone event published. operation=PlanningModifySaved baseItemId=865462789462822913 traceId=3e293946-4033-409d-ad50-5758243f9d1f task=-180000 
-
-2026-07-20 14:58:09.429 info INFO - Planning record updated in OIC successfully. itemId=865462789462822913 
-
-2026-07-20 14:58:09.394 info INFO - [SUCCESS] TaskDone event published. operation=PlanningModifySaved baseItemId=865462795045441537 traceId=0b2c72be-3ffc-42a9-940d-47ff5757dddb task=-180000 
-
-2026-07-20 14:58:09.380 info INFO - Planning record updated in OIC successfully. itemId=865462795045441537 
-
-2026-07-20 14:58:09.358 info INFO - [SUCCESS] TaskDone event published. operation=PlanningModifySaved baseItemId=865462807473164289 traceId=801e45f8-71cd-48e3-b0cc-25cd19d5eb9c task=-180000 
-
-2026-07-20 14:58:09.333 info INFO - Planning record updated in OIC successfully. itemId=865462807473164289 
-
-2026-07-20 14:58:09.310 info INFO - [SUCCESS] TaskDone event published. operation=PlanningModifySaved baseItemId=865462801668247553 traceId=1a638f18-bc73-49e0-bdfe-51150f7ad558 task=-180000 
-
-2026-07-20 14:58:09.247 info INFO - Planning record updated in OIC successfully. itemId=865462801668247553 
-
-2026-07-20 14:58:09.206 info INFO - [SUCCESS] TaskDone event published. operation=PlanningModifySaved baseItemId=865462772530417665 traceId=18e31691-1342-4827-a3fb-f42bfafaa039 task=-180000 
-
-2026-07-20 14:58:09.184 info INFO - Planning record updated in OIC successfully. itemId=865462772530417665 """;
-
 
     @ConfigProperty(name = "azure.openai.endpoint")
     String endpoint;
@@ -107,41 +93,121 @@ private static final String USER_PROMPT = """
     @ConfigProperty(name = "azure.openai.deployment-name")
     String deploymentName;
 
+    @Inject
+    GrafanaService grafanaService;
+
     private OpenAIClient openAIClient;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @PostConstruct
     void init() {
         LOG.info("Initializing Azure OpenAI client...");
         openAIClient = new OpenAIClientBuilder()
-            .credential(new AzureKeyCredential(apiKey))
-            .endpoint(endpoint)
-            .buildClient();
+                .credential(new AzureKeyCredential(apiKey))
+                .endpoint(endpoint)
+                .buildClient();
         LOG.info("Azure OpenAI client initialized successfully");
     }
 
     public ChatResponse processMessage(ChatRequest request) {
         String userMessage = request.getMessage();
-        LOG.infof("Processing message with Azure OpenAI: %s", userMessage);
+        LOG.infof("Processing message: %s", userMessage);
 
         try {
-            List<ChatRequestMessage> chatMessages = Arrays.asList(
-                new ChatRequestSystemMessage(SYSTEM_PROMPT),
-                new ChatRequestUserMessage(userMessage + USER_PROMPT)
-            );
+            // ── Step 1: Ask the AI which Grafana API to call ──────────────────
+            String apiDecisionJson = callAIForApiSelection(userMessage);
+            LOG.infof("AI API selection response: %s", apiDecisionJson);
 
-            ChatCompletionsOptions options = new ChatCompletionsOptions(chatMessages);
-            options.setMaxCompletionTokens(16384);
+            JsonNode decision = objectMapper.readTree(apiDecisionJson);
+            String api = decision.get("api").asText();
+            String query = decision.has("query") && !decision.get("query").isNull()
+                    ? decision.get("query").asText()
+                    : null;
 
-            ChatCompletions chatCompletions = openAIClient.getChatCompletions(deploymentName, options);
+            LOG.infof("Selected Grafana API: %s, Query: %s", api, query);
 
-            String response = chatCompletions.getChoices().get(0).getMessage().getContent();
-            LOG.infof("Received response from Azure OpenAI: %s", response);
+            // ── Step 2: Call the appropriate Grafana API ──────────────────────
+            String grafanaData = fetchGrafanaData(api, query);
+            LOG.infof("Grafana data fetched for API [%s]", api);
 
-            return new ChatResponse(response);
+            // ── Step 3: Send user message + Grafana data to AI for final answer ─
+            String finalResponse = callAIForAnalysis(userMessage, api, grafanaData);
+            LOG.infof("Final AI response generated");
+
+            return new ChatResponse(finalResponse);
+
         } catch (Exception e) {
-            LOG.errorf(e, "Error calling Azure OpenAI: %s", e.getMessage());
+            LOG.errorf(e, "Error in processMessage: %s", e.getMessage());
             return new ChatResponse("Sorry, I encountered an error while processing your request. Please try again later.");
         }
+    }
+
+    /**
+     * Step 1 — Ask the AI to pick which Grafana API to call.
+     */
+    private String callAIForApiSelection(String userMessage) {
+        List<ChatRequestMessage> messages = Arrays.asList(
+                new ChatRequestSystemMessage(API_SELECTOR_PROMPT),
+                new ChatRequestUserMessage(userMessage)
+        );
+
+        ChatCompletionsOptions options = new ChatCompletionsOptions(messages);
+        options.setMaxCompletionTokens(256);
+
+        ChatCompletions completions = openAIClient.getChatCompletions(deploymentName, options);
+        return completions.getChoices().get(0).getMessage().getContent().trim();
+    }
+
+    /**
+     * Step 2 — Call the appropriate Grafana API based on AI's decision.
+     */
+    private String fetchGrafanaData(String api, String query) throws Exception {
+        return switch (api) {
+            case "LOGS" -> {
+                if (query == null || query.isBlank()) {
+                    throw new IllegalArgumentException("LOGS API requires a LogQL query");
+                }
+                Object response = grafanaService.executeLokiQuery(query);
+                yield objectMapper.writeValueAsString(response);
+            }
+            case "METRICS" -> {
+                if (query == null || query.isBlank()) {
+                    throw new IllegalArgumentException("METRICS API requires a PromQL query");
+                }
+                Object response = grafanaService.executePrometheusQuery(query);
+                yield objectMapper.writeValueAsString(response);
+            }
+            case "FOLDERS" -> {
+                Object response = grafanaService.getFolders();
+                yield objectMapper.writeValueAsString(response);
+            }
+            case "DATASOURCES" -> {
+                Object response = grafanaService.getDatasources();
+                yield objectMapper.writeValueAsString(response);
+            }
+            default -> throw new IllegalArgumentException("Unknown Grafana API selected by AI: " + api);
+        };
+    }
+
+    /**
+     * Step 3 — Send user query + fetched Grafana data to AI for final diagnostic analysis.
+     */
+    private String callAIForAnalysis(String userMessage, String apiUsed, String grafanaData) {
+        String contextPrompt = String.format(
+                "User Query: %s\n\nData fetched from Grafana API [%s]:\n%s",
+                userMessage, apiUsed, grafanaData
+        );
+
+        List<ChatRequestMessage> messages = Arrays.asList(
+                new ChatRequestSystemMessage(SYSTEM_PROMPT),
+                new ChatRequestUserMessage(contextPrompt)
+        );
+
+        ChatCompletionsOptions options = new ChatCompletionsOptions(messages);
+        options.setMaxCompletionTokens(16384);
+
+        ChatCompletions completions = openAIClient.getChatCompletions(deploymentName, options);
+        return completions.getChoices().get(0).getMessage().getContent();
     }
 
     /**

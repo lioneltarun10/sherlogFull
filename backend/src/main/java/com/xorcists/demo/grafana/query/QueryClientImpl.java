@@ -13,11 +13,11 @@ import java.util.Map;
 
 /**
  * Client for Grafana query API operations.
- * 
+ * <p>
  * MIGRATION NOTE:
  * - Spring Boot: @Component, extends BaseGrafanaClient, used WebClient's UriBuilder
  * - Quarkus: @ApplicationScoped, uses Map<String,String> for query params
- * 
+ * <p>
  * Key changes:
  * - UriBuilder lambda -> Map of query parameters
  * - ParameterizedTypeReference<>() -> TypeReference<>()
@@ -25,6 +25,8 @@ import java.util.Map;
  */
 @ApplicationScoped
 public class QueryClientImpl extends BaseGrafanaClient implements QueryClient {
+
+    private static final boolean MOCK_MODE = true;
 
     // Required by Quarkus CDI for proxy creation
     protected QueryClientImpl() {
@@ -36,13 +38,21 @@ public class QueryClientImpl extends BaseGrafanaClient implements QueryClient {
         super(httpClient, config);
     }
 
+
     @Override
     public GrafanaQueryResponse execute(GrafanaQueryRequest request, String datasourceType) {
+
+        if (MockCache.ENABLED) {
+            System.out.println("Mock mode");
+            return MockCache.getResponse(datasourceType, request);
+        }
+
         Map<String, String> queryParams = Map.of(
                 "ds_type", datasourceType,
                 "requestId", "explore"
         );
 
-        return post("/api/ds/query", queryParams, request, new TypeReference<>() {});
+        return post("/api/ds/query", queryParams, request, new TypeReference<>() {
+        });
     }
 }
